@@ -1,3 +1,4 @@
+set -euo pipefail
 
 echo "###########################"
 echo "Building the repo database."
@@ -32,3 +33,9 @@ mv luminos-repository.files.tar.gz.sig luminos-repository.files.sig
 echo "#######################################"
 echo "Packages in the repo have been updated!"
 echo "#######################################"
+
+git status
+git add -u && echo "Added updated files to the index."
+git add * && echo "Added new files to the index."
+git commit -m "Updated the repo database." && echo "Committed the changes."
+git push origin && echo "Pushed the changes to the remote repository."

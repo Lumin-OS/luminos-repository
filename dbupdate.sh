@@ -20,10 +20,10 @@ echo "###################################"
 repo-add -s -k 547F4761802A0904A0B10E5FAE527343BC3E39B3 -n -R luminos-repository.db.tar.gz *.pkg.tar.zst
 
 # Removing the symlinks because GitLab can't handle them.
-rm luminos-repository.db
-rm luminos-repository.db.sig
-rm luminos-repository.files
-rm luminos-repository.files.sig
+#rm luminos-repository.db
+#rm luminos-repository.db.sig
+#rm luminos-repository.files
+#rm luminos-repository.files.sig
 
 # Renaming the tar.gz files without the extension. Each signature keeps
 # its file's name plus .sig, which is where pacman looks for it.

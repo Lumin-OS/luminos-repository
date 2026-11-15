@@ -1,39 +1,41 @@
+#!/usr/bin/env bash
+# Sign packages individually before recording them in a signed repository DB.
 set -euo pipefail
+cd -- "$(dirname -- "${BASH_SOURCE[0]}")/x86_64"
+key=547F4761802A0904A0B10E5FAE527343BC3E39B3
+shopt -s nullglob
+packages=(*.pkg.tar.zst)
+(( ${#packages[@]} > 0 )) || { echo 'No packages to publish' >&2; exit 1; }
 
-echo "###########################"
-echo "Building the repo database."
-echo "###########################"
+# Keep the current DB available if signing fails or pinentry is cancelled.
+for package in "${packages[@]}"; do
+    if [[ ! -f $package.sig ]] || ! gpg --batch --assert-signer "$key" --verify "$package.sig" "$package"; then
+        signature=$(mktemp "$package.sig.XXXXXX")
+        if gpg --yes --local-user "$key" --output "$signature" --detach-sign "$package"; then
+            mv -- "$signature" "$package.sig"
+        else
+            rm -f -- "$signature"
+            exit 1
+        fi
+    fi
+done
 
-## Arch: x86_64
-cd x86_64
-rm -f luminos-repository*
-
-echo "###################################"
-echo "Building for architecture 'x86_64'."
-echo "###################################"
-
-## repo-add
-## -s: signs the database (not the packages; makepkg --sign does those)
-## -k: with the repository's key, the one luminos-keyring carries
-## -n: only add new packages not already in database
-## -R: remove old package files when updating their entry
-repo-add -s -k 547F4761802A0904A0B10E5FAE527343BC3E39B3 -n -R luminos-repository.db.tar.gz *.pkg.tar.zst
-
-gpg --local-user 547F4761802A0904A0B10E5FAE527343BC3E39B3 --detach-sign *.pkg.tar.zst
-
-# Renaming the tar.gz files without the extension. Each signature keeps
-# its file's name plus .sig, which is where pacman looks for it.
-mv luminos-repository.db.tar.gz luminos-repository.db
-mv luminos-repository.db.tar.gz.sig luminos-repository.db.sig
-mv luminos-repository.files.tar.gz luminos-repository.files
-mv luminos-repository.files.tar.gz.sig luminos-repository.files.sig
-
-echo "#######################################"
-echo "Packages in the repo have been updated!"
-echo "#######################################"
-
-git status
-git add -u && echo "Added updated files to the index."
-git add * && echo "Added new files to the index."
-git commit -m "Updated the repo database." && echo "Committed the changes."
-git push origin && echo "Pushed the changes to the remote repository."
+# Build separately: publish DB aliases only after every archive is signed
+# and repo-add has completed. Do not remove archives from the live repository.
+staging=$(mktemp -d .dbupdate.XXXXXX)
+trap 'rm -rf -- "$staging"' EXIT
+for package in "${packages[@]}"; do
+    ln -s -- "$PWD/$package" "$staging/$package"
+    ln -s -- "$PWD/$package.sig" "$staging/$package.sig"
+done
+(cd -- "$staging" && repo-add -p -s -k "$key" luminos-repository.db.tar.gz ./*.pkg.tar.zst)
+for name in db files; do
+    mv -- "$staging/luminos-repository.$name.tar.gz" "luminos-repository.$name"
+    mv -- "$staging/luminos-repository.$name.tar.gz.sig" "luminos-repository.$name.sig"
+done
+# Add publication files explicitly; do not sweep unrelated local files into Git.
+git add -- "${packages[@]}" "${packages[@]/%/.sig}" \
+    luminos-repository.db luminos-repository.db.sig \
+    luminos-repository.files luminos-repository.files.sig
+git commit -m "Publish signed packages and repository database"
+git push origin HEAD
